@@ -1,0 +1,103 @@
+﻿@page "/Movies"
+@using OptixMovies.Services
+@using OptixMovies.Models
+@using MudBlazor
+@attribute [StreamRendering]
+@rendermode InteractiveServer
+@inject ApiService apiService
+
+<PageTitle>Movies</PageTitle>
+
+<h1>Movies</h1>
+
+<p>Welcome to our movie database! You'll find all the information you need on a large number of movies below.</p>
+
+<MudTable ServerData="@(new Func<TableState, Task<TableData<MovieResponse>>>(ServerReload))"
+          Dense="true" Hover="true" @ref="table" Loading="@pauseLoading">
+    <ToolBarContent>
+        <MudTextField T="string" ValueChanged="@(s=>OnSearch(s))" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="Title" T="MovieResponse">Title</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="Genre" T="MovieResponse">Genre</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="ReleaseDate" T="MovieResponse">Release Date</MudTableSortLabel></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Title">@context.Title</MudTd>
+        <MudTd DataLabel="Genre">@context.Genre</MudTd>
+        <MudTd DataLabel="Release Date">@context.ReleaseDate.Value.ToShortDateString()</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No matching records found</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private IEnumerable<MovieResponse> pagedData;
+    private MudTable<MovieResponse> table;
+
+    private bool pauseLoading = false;
+
+    private int totalItems;
+    private string searchString = null;
+    private string sortLabel;
+    private SortDirection sortDirection;
+    private int page;
+    private int pageSize;
+
+    private async Task<TableData<MovieResponse>> ServerReload(TableState state)
+    {
+        pauseLoading = false;
+        await InvokeAsync(StateHasChanged);
+        sortLabel = state.SortLabel;
+        sortDirection = state.SortDirection;
+        page = state.Page;
+        pageSize = state.PageSize;
+
+        await LoadData();
+
+        return new TableData<MovieResponse>() { TotalItems = totalItems, Items = pagedData };
+    }
+
+    private async Task LoadData()
+    {
+        IEnumerable<MovieResponse> data = await apiService.HttpClient.GetFromJsonAsync<List<MovieResponse>>("api/GetAll");
+
+        data = data.Where(movie =>
+        {
+            if (string.IsNullOrWhiteSpace(searchString))
+                return true;
+            if (movie.Title.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
+        }).ToArray();
+        totalItems = data.Count();
+        switch (sortLabel)
+        {
+            case "Title":
+                data = data.OrderByDirection(sortDirection, o => o.Title);
+                break;
+            case "ReleaseDate":
+                data = data.OrderByDirection(sortDirection, o => o.ReleaseDate);
+                break;
+            case "Genre":
+                data = data.OrderByDirection(sortDirection, o => o.Genre);
+                break;
+        }
+
+        pagedData = data.Skip(page * pageSize).Take(pageSize).ToArray();
+    }
+
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData();
+    }
+}
